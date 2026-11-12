@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include "netpeek.h"
+#include "version.h"
 
 void cmd_version(void)
 {

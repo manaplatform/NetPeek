@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-#include "netpeek.h"
+#include "version.h"
 
 typedef struct
 {

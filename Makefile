@@ -2,7 +2,7 @@ BUILD_DIR ?= build
 BUILD_TYPE ?= Debug
 NPROC := $(shell (nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4))
 
-.PHONY: all configure build clean test debug release relwithdebinfo wordlist_builtin
+.PHONY: all configure build clean test debug release relwithdebinfo wordlist_builtin install
 
 all: build
 
@@ -32,3 +32,7 @@ test: build
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+install: build
+	cmake --install $(BUILD_DIR)
+

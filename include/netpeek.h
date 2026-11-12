@@ -19,15 +19,6 @@
 #include "os_fingerprint_types.h"
 #include "os_tcp_probes.h"
 /* ═══════════════════════════════════════════════════════
- *  Version
- * ═══════════════════════════════════════════════════════ */
-
-#define NETPEEK_VERSION_MAJOR 0
-#define NETPEEK_VERSION_MINOR 1
-#define NETPEEK_VERSION_PATCH 0
-#define NETPEEK_VERSION_STRING "0.1.0"
-
-/* ═══════════════════════════════════════════════════════
  *  Global limits
  * ═══════════════════════════════════════════════════════ */
 
