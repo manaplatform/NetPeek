@@ -177,7 +177,7 @@ static int try_connect_port(const char *ip, uint16_t port,
     }
 
     close(sock);
-    return 0; /* Timeout */
+    return -1; /* Timeout / filtered */
 }
 
 /* ================================================================ */
@@ -186,37 +186,29 @@ static int try_connect_port(const char *ip, uint16_t port,
 
 static uint16_t find_closed_port(np_pipeline_ctx_t *ctx)
 {
-    for (int i = 0; i < np_top_ports_count; i++)
+    if (ctx && ctx->closed_port > 0)
     {
-        uint16_t candidate = np_top_ports_top_1000[i];
-        int is_open = 0;
-
-        for (uint32_t j = 0; j < ctx->open_port_count; j++)
-        {
-            if (ctx->open_ports[j] == candidate)
-            {
-                is_open = 1;
-                break;
-            }
-        }
-
-        if (!is_open)
-        {
-            pipe_log(NP_PIPE_LOG_DEBUG, "stage",
-                     "closed port candidate=%u (from scan list)",
-                     candidate);
-            return candidate;
-        }
+        pipe_log(NP_PIPE_LOG_DEBUG, "stage",
+                 "closed port already verified=%u",
+                 ctx->closed_port);
+        return ctx->closed_port;
     }
 
-    static const uint16_t fallback_ports[] = {
-        54321, 33456, 40000, 50000, 60000, 19, 7};
+    static const uint16_t fallback_ports[] = {54321, 33456, 40000};
     int n_fallbacks = sizeof(fallback_ports) / sizeof(fallback_ports[0]);
 
+    int timeout_ms = 300;
+    if (ctx && ctx->config)
+    {
+        const np_config_t *cfg = (const np_config_t *)ctx->config;
+        if (cfg->timeout_ms > 0 && cfg->timeout_ms < 500)
+            timeout_ms = (int)cfg->timeout_ms;
+    }
+
+    /* Quick check on a small set of fallback candidate ports */
     for (int i = 0; i < n_fallbacks; i++)
     {
-        int result = try_connect_port(ctx->target_ip,
-                                      fallback_ports[i], 200);
+        int result = try_connect_port(ctx->target_ip, fallback_ports[i], timeout_ms);
         if (result == 0)
         {
             pipe_log(NP_PIPE_LOG_DEBUG, "stage",
@@ -227,7 +219,7 @@ static uint16_t find_closed_port(np_pipeline_ctx_t *ctx)
     }
 
     pipe_log(NP_PIPE_LOG_WARN, "stage",
-             "no verified closed port, using fallback=%u",
+             "no verified closed port (target drops closed ports), using fallback=%u",
              NP_CLOSED_PORT_FALLBACK);
 
     return NP_CLOSED_PORT_FALLBACK;
@@ -246,12 +238,30 @@ int stage_port_discovery(np_pipeline_ctx_t *ctx)
     if (!ctx || !ctx->target_ip[0])
         return -1;
 
+    if (ctx->open_port_count > 0)
+    {
+        if (ctx->primary_open_port == 0)
+            ctx->primary_open_port = ctx->open_ports[0];
+        if (ctx->closed_port == 0)
+            ctx->closed_port = find_closed_port(ctx);
+
+        pipe_log(NP_PIPE_LOG_INFO, "stage",
+                 "using pre-discovered ports: primary_open=%u closed=%u total_open=%u",
+                 ctx->primary_open_port, ctx->closed_port, ctx->open_port_count);
+
+        return 0;
+    }
+
     if (ctx->user_port)
     {
         ctx->primary_open_port = ctx->user_port;
-        ctx->open_ports[0] = ctx->user_port;
-        ctx->open_port_count = 1;
-        ctx->closed_port = NP_CLOSED_PORT_FALLBACK;
+        if (ctx->open_port_count == 0)
+        {
+            ctx->open_ports[0] = ctx->user_port;
+            ctx->open_port_count = 1;
+        }
+        if (ctx->closed_port == 0)
+            ctx->closed_port = NP_CLOSED_PORT_FALLBACK;
 
         pipe_log(NP_PIPE_LOG_INFO, "stage",
                  "using user-specified port=%u closed=%u",
@@ -268,6 +278,9 @@ int stage_port_discovery(np_pipeline_ctx_t *ctx)
     int extra = total % NUM_SCAN_THREADS;
     int idx = 0;
 
+    bool thread_started[NUM_SCAN_THREADS];
+    memset(thread_started, 0, sizeof(thread_started));
+
     for (int i = 0; i < NUM_SCAN_THREADS; i++)
     {
         int count = per + (i < extra);
@@ -276,14 +289,19 @@ int stage_port_discovery(np_pipeline_ctx_t *ctx)
         tasks[i].num_ports = count;
 
         if (count > 0)
-            pthread_create(&threads[i], NULL,
-                           thread_port_discovery_worker,
-                           &tasks[i]);
+        {
+            if (pthread_create(&threads[i], NULL,
+                               thread_port_discovery_worker,
+                               &tasks[i]) == 0)
+            {
+                thread_started[i] = true;
+            }
+        }
         idx += count;
     }
 
     for (int i = 0; i < NUM_SCAN_THREADS; i++)
-        if (tasks[i].num_ports)
+        if (thread_started[i])
             pthread_join(threads[i], NULL);
 
     pipe_log(NP_PIPE_LOG_INFO, "stage",
@@ -402,6 +420,13 @@ int stage_tcp_probes(np_pipeline_ctx_t *ctx)
 
     if (!ctx)
         return -1;
+
+    if (ctx->primary_open_port == 0)
+    {
+        pipe_log(NP_PIPE_LOG_WARN, "stage",
+                 "no open port available for TCP fingerprint probes");
+        return -1;
+    }
 
     memset(&ctx->probe_results, 0, sizeof(ctx->probe_results));
     memset(&ctx->active_vector, 0, sizeof(ctx->active_vector));
@@ -656,6 +681,13 @@ int stage_banner_collect(np_pipeline_ctx_t *ctx)
 
     if (!ctx)
         return -1;
+
+    if (ctx->open_port_count == 0)
+    {
+        pipe_log(NP_PIPE_LOG_WARN, "stage",
+                 "no open ports for banner collection");
+        return 0;
+    }
 
     /* Zero out ALL prior results — critical for safety */
     memset(&ctx->os_result, 0, sizeof(ctx->os_result));

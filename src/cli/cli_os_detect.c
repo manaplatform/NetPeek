@@ -12,8 +12,12 @@
 #include "cli_privilege.h"
 #include "help.h"
 #include "logger.h"
+#include "ports.h"
+#include "runtime/stats.h"
 #include "recon/recon.h"
 #include "recon/output.h"
+#include "recon/submodules/os_detect/os_pipeline_priv.h"
+#include "recon/submodules/os_detect/os_detect_pipeline.h"
 
 static volatile sig_atomic_t interrupted = 0;
 
@@ -218,8 +222,80 @@ int cmd_os_detect(int argc, char **argv)
     }
 
     rc = np_recon_register_builtin_modules(ctx);
-    if (rc == NP_OK)
-        rc = np_module_run_stage(ctx, NP_STAGE_FINGERPRINT);
+    if (rc != NP_OK)
+    {
+        np_recon_destroy(ctx);
+        np_config_destroy(cfg);
+        return 1;
+    }
+
+    /* Ingest host discovery into graph and stats */
+    (void)np_recon_graph_ingest_discovery(ctx);
+    ctx->hosts_seen = 1;
+    np_stats_set_hosts_total(1);
+    np_stats_inc_hosts_completed();
+
+    /* Step 1: First find open ports with port discovery pipeline */
+    uint16_t primary_open_port = port;
+    uint16_t discovered_ports[NP_PIPELINE_MAX_OPEN_PORTS];
+    uint32_t discovered_count = 0;
+
+    if (primary_open_port == 0)
+    {
+        np_pipeline_ctx_t pctx;
+        memset(&pctx, 0, sizeof(pctx));
+        strncpy(pctx.target_ip, tgt->ip, sizeof(pctx.target_ip) - 1);
+        pctx.user_port = 0;
+        pctx.config = cfg;
+
+        if (stage_port_discovery(&pctx) == 0 && pctx.open_port_count > 0)
+        {
+            discovered_count = pctx.open_port_count;
+            primary_open_port = pctx.primary_open_port;
+            for (uint32_t i = 0; i < discovered_count && i < NP_PIPELINE_MAX_OPEN_PORTS; i++)
+                discovered_ports[i] = pctx.open_ports[i];
+        }
+    }
+    else
+    {
+        discovered_ports[0] = primary_open_port;
+        discovered_count = 1;
+    }
+
+    /* Step 2: Then add that in stats and graph */
+    if (discovered_count > 0)
+    {
+        tgt->port_count = discovered_count;
+        tgt->results = calloc(discovered_count, sizeof(np_port_result_t));
+        if (tgt->results)
+        {
+            for (uint32_t i = 0; i < discovered_count; i++)
+            {
+                np_port_result_t *pr = &tgt->results[i];
+                pr->port = discovered_ports[i];
+                pr->state = NP_PORT_OPEN;
+                strncpy(pr->proto, "tcp", sizeof(pr->proto) - 1);
+                strncpy(pr->reason, "syn-ack", sizeof(pr->reason) - 1);
+                np_stats_inc_port_state(NP_PORT_OPEN);
+            }
+        }
+        (void)np_recon_graph_ingest_scan(ctx);
+    }
+
+    uint64_t pkts = np_top_ports_count;
+    if (pkts == 0)
+        pkts = 1000;
+    ctx->packets_sent += pkts;
+    np_stats_inc_pkts_sent(pkts);
+    if (discovered_count > 0)
+    {
+        ctx->packets_recv += discovered_count;
+        np_stats_inc_pkts_recv(discovered_count);
+    }
+
+    /* Step 3: And run OS detection with discovered primary open port */
+    cfg->os_target_port = primary_open_port;
+    rc = np_module_run_stage(ctx, NP_STAGE_FINGERPRINT);
     if (rc == NP_OK)
         rc = np_output_stage_run(ctx);
 

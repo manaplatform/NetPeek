@@ -1,10 +1,13 @@
 #include "recon/modules/fingerprint_os.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "logger.h"
+#include "runtime/stats.h"
 #include "recon/recon.h"
 #include "recon/submodules/os_detect/os_detect_pipeline.h"
+#include "recon/submodules/os_detect/os_pipeline_config.h"
 #include "recon/submodules/os_detect/os_sigload.h"
 #include "recon/submodules/scanner/scanner_internal.h"
 
@@ -46,10 +49,27 @@ static np_status_t os_fp_run_standalone(np_recon_context_t *ctx)
     np_os_result_t result;
     memset(&result, 0, sizeof(result));
 
-    np_status_t rc = np_os_detect_pipeline_run(ip,
-                                               ctx->cfg->os_target_port,
-                                               &db,
-                                               &result);
+    uint16_t open_ports[NP_PIPELINE_MAX_OPEN_PORTS];
+    uint32_t open_count = 0;
+    if (target->port_count > 0 && target->results)
+    {
+        for (uint32_t i = 0; i < target->port_count && open_count < NP_PIPELINE_MAX_OPEN_PORTS; i++)
+        {
+            if (target->results[i].state == NP_PORT_OPEN || target->results[i].state == NP_PORT_OPEN_FILTERED)
+            {
+                open_ports[open_count++] = target->results[i].port;
+            }
+        }
+    }
+
+    np_status_t rc = np_os_detect_pipeline_run_ex(ip,
+                                                  ctx->cfg->os_target_port,
+                                                  open_count > 0 ? open_ports : NULL,
+                                                  open_count,
+                                                  0,
+                                                  &db,
+                                                  ctx->cfg,
+                                                  &result);
     np_sigdb_free(&db);
     if (rc != NP_OK)
         return rc;
@@ -68,6 +88,28 @@ static np_status_t os_fp_run_standalone(np_recon_context_t *ctx)
     target->os_result_valid =
         target->os_result.best_confidence > 0 ||
         target->os_result.os_guess_passive[0] != 0;
+
+    if (result.open_port_count > 0 && target->port_count == 0)
+    {
+        target->port_count = (uint32_t)result.open_port_count;
+        target->results = calloc(target->port_count, sizeof(np_port_result_t));
+        if (target->results)
+        {
+            for (uint32_t i = 0; i < target->port_count; i++)
+            {
+                np_port_result_t *pr = &target->results[i];
+                pr->port = result.open_ports[i];
+                pr->state = NP_PORT_OPEN;
+                strncpy(pr->proto, "tcp", sizeof(pr->proto) - 1);
+                strncpy(pr->reason, "syn-ack", sizeof(pr->reason) - 1);
+                np_stats_inc_port_state(NP_PORT_OPEN);
+            }
+        }
+    }
+
+    (void)np_recon_graph_ingest_discovery(ctx);
+    if (target->port_count > 0 && ctx->services_seen == 0)
+        (void)np_recon_graph_ingest_scan(ctx);
 
     return np_recon_graph_ingest_os(ctx);
 }
