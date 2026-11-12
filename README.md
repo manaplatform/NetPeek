@@ -489,3 +489,10 @@ netpeek npe --script vuln -t 192.168.1.10 -p 80,443,445
 
 NetPeek is intended for **authorized security testing and research only**.
 Do not use this tool against systems or networks without explicit permission.
+
+---
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
