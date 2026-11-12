@@ -17,6 +17,8 @@
 #include <net/ethernet.h>
 
 #include <pcap.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 
 /* ============================================================
    Helpers
@@ -57,12 +59,52 @@ static int get_local_ip(const struct sockaddr_in *dst, char *out)
     return 0;
 }
 
+static int get_interface_for_ip(const char *src_ip, char *dev_out, size_t dev_len)
+{
+    if (!src_ip || !dev_out || dev_len == 0)
+        return -1;
+
+    struct ifaddrs *ifaddr = NULL;
+    if (getifaddrs(&ifaddr) != 0)
+        return -1;
+
+    int found = -1;
+    for (struct ifaddrs *ifa = ifaddr; ifa; ifa = ifa->ifa_next)
+    {
+        if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET)
+            continue;
+
+        char ip[INET_ADDRSTRLEN];
+        struct sockaddr_in *sin = (struct sockaddr_in *)ifa->ifa_addr;
+        if (inet_ntop(AF_INET, &sin->sin_addr, ip, sizeof(ip)) &&
+            strcmp(ip, src_ip) == 0)
+        {
+            strncpy(dev_out, ifa->ifa_name, dev_len - 1);
+            dev_out[dev_len - 1] = '\0';
+            found = 0;
+            break;
+        }
+    }
+
+    freeifaddrs(ifaddr);
+    return found;
+}
+
 static size_t pcap_l2_offset(pcap_t *pc)
 {
     switch (pcap_datalink(pc)) {
         case DLT_EN10MB:    return 14;
         case DLT_LINUX_SLL: return 16;
         case DLT_NULL:      return 4;
+#ifdef DLT_LOOP
+        case DLT_LOOP:      return 4;
+#endif
+#ifdef DLT_RAW
+        case DLT_RAW:       return 0;
+#endif
+#ifdef DLT_IPV4
+        case DLT_IPV4:      return 0;
+#endif
         default:            return 0;
     }
 }
@@ -90,6 +132,12 @@ static int os_tcp_send_probe_internal(
 
     fcntl(s, F_SETFL, O_NONBLOCK);
 
+    int opt = 1;
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#ifdef SO_REUSEPORT
+    setsockopt(s, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+#endif
+
     struct sockaddr_in src = {0};
     src.sin_family = AF_INET;
     src.sin_port   = htons(sport);
@@ -106,8 +154,7 @@ static int os_tcp_send_probe_internal(
     inet_pton(AF_INET, dst_ip, &dst.sin_addr);
 
     connect(s, (struct sockaddr *)&dst, sizeof(dst));
-    close(s);
-    return 0;
+    return s;
 }
 #endif
 
@@ -217,9 +264,16 @@ int np_send_tcp_probe(
         dport = cfg->closed_port;
     uint32_t seq   = rand();
 
-    char errbuf[PCAP_ERRBUF_SIZE];
-    char *dev = pcap_lookupdev(errbuf);
-    if (!dev)
+    char dev_buf[IFNAMSIZ] = {0};
+    char *dev = NULL;
+    char errbuf[PCAP_ERRBUF_SIZE] = {0};
+
+    if (get_interface_for_ip(src_ip, dev_buf, sizeof(dev_buf)) == 0)
+        dev = dev_buf;
+    else
+        dev = pcap_lookupdev(errbuf);
+
+    if (!dev || !dev[0])
         return -1;
 
     pcap_t *pc = pcap_create(dev, errbuf);
@@ -247,7 +301,7 @@ int np_send_tcp_probe(
         pcap_freecode(&fp);
     }
 
-    os_tcp_send_probe_internal(src_ip, dst_ip, sport, dport, seq, type);
+    int probe_fd = os_tcp_send_probe_internal(src_ip, dst_ip, sport, dport, seq, type);
 
     size_t l2 = pcap_l2_offset(pc);
     time_t start = time(NULL);
@@ -390,10 +444,14 @@ int np_send_tcp_probe(
             out->ecn_flags     = tcp->th_flags & 0xC0; /* CWR + ECE bits */
         }
 
+        if (probe_fd >= 0)
+            close(probe_fd);
         pcap_close(pc);
         return 0;
     }
 
+    if (probe_fd >= 0)
+        close(probe_fd);
     pcap_close(pc);
     return -1;
 }

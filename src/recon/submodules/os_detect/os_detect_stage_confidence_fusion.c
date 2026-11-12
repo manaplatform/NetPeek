@@ -107,9 +107,9 @@ int stage_confidence_fusion(np_pipeline_ctx_t *ctx)
     }
 
     /* Channel 2: Banner */
-    if (ctx->banner_valid && ctx->banner_os_name)
+    if (ctx->banner_valid && ctx->banner_os_name[0])
     {
-        banner_os   = &ctx->banner_os_name;
+        banner_os   = ctx->banner_os_name;
         banner_conf = ctx->banner_confidence;
 
         pipe_log(NP_PIPE_LOG_DEBUG, LOG_STAGE,
@@ -425,6 +425,14 @@ publish_result:
                (size_t)n * sizeof(np_os_match_t));
         ctx->os_result.candidate_count = n;
     }
+
+    /* Preserve port discovery results */
+    ctx->os_result.open_port_count = (int)ctx->open_port_count;
+    ctx->os_result.port_used = ctx->primary_open_port;
+    for (uint32_t i = 0; i < ctx->open_port_count && i < NP_OS_MAX_OPEN_PORTS; i++)
+        ctx->os_result.open_ports[i] = ctx->open_ports[i];
+    ctx->os_result.probe_count = ctx->probe_response_count;
+    ctx->os_result.probes_answered = ctx->probe_response_count;
 
     pipe_log(NP_PIPE_LOG_INFO, LOG_STAGE,
              "Fusion complete: OS='%s' Family='%s' Confidence=%.2f%%",

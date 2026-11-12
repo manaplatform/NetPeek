@@ -74,6 +74,13 @@ void *thread_port_discovery_worker(void *arg)
         int rc = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
         if (rc < 0 && errno != EINPROGRESS)
         {
+            if (errno == ECONNREFUSED)
+            {
+                pthread_mutex_lock(&ctx_port_mutex);
+                if (ctx->closed_port == 0)
+                    ctx->closed_port = port;
+                pthread_mutex_unlock(&ctx_port_mutex);
+            }
             close(sock);
             continue;
         }
@@ -83,29 +90,47 @@ void *thread_port_discovery_worker(void *arg)
         pfd.fd = sock;
         pfd.events = POLLOUT;
 
-        if (poll(&pfd, 1, 200) > 0 && (pfd.revents & POLLOUT))
+        int timeout_ms = 1000;
+        if (ctx && ctx->config)
+        {
+            const np_config_t *cfg = (const np_config_t *)ctx->config;
+            if (cfg->timeout_ms > 0)
+                timeout_ms = (int)cfg->timeout_ms;
+        }
+
+        if (poll(&pfd, 1, timeout_ms) > 0 && (pfd.revents & POLLOUT))
         {
             int err = 0;
             socklen_t len = sizeof(err);
 
-            if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &err, &len) == 0 && err == 0)
+            if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &err, &len) == 0)
             {
-                pthread_mutex_lock(&ctx_port_mutex);
-
-                if (ctx->open_port_count < NP_PIPELINE_MAX_OPEN_PORTS)
+                if (err == 0)
                 {
-                    ctx->open_ports[ctx->open_port_count++] = port;
+                    pthread_mutex_lock(&ctx_port_mutex);
 
-                    if (ctx->primary_open_port == 0)
-                        ctx->primary_open_port = port;
+                    if (ctx->open_port_count < NP_PIPELINE_MAX_OPEN_PORTS)
+                    {
+                        ctx->open_ports[ctx->open_port_count++] = port;
 
-                    pipe_log(NP_PIPE_LOG_DEBUG,
-                             LOG_STAGE,
-                             "Open port discovered: %u",
-                             port);
+                        if (ctx->primary_open_port == 0)
+                            ctx->primary_open_port = port;
+
+                        pipe_log(NP_PIPE_LOG_DEBUG,
+                                 LOG_STAGE,
+                                 "Open port discovered: %u",
+                                 port);
+                    }
+
+                    pthread_mutex_unlock(&ctx_port_mutex);
                 }
-
-                pthread_mutex_unlock(&ctx_port_mutex);
+                else if (err == ECONNREFUSED)
+                {
+                    pthread_mutex_lock(&ctx_port_mutex);
+                    if (ctx->closed_port == 0)
+                        ctx->closed_port = port;
+                    pthread_mutex_unlock(&ctx_port_mutex);
+                }
             }
         }
 
@@ -187,10 +212,14 @@ static void pipeline_promote_banner_result(np_pipeline_ctx_t *ctx)
 /* ============================================================
    Pipeline Entry (FULL LOGGING)
    ============================================================ */
-np_status_t np_os_detect_pipeline_run(
+np_status_t np_os_detect_pipeline_run_ex(
     const char *target_ip,
     uint16_t port,
+    const uint16_t *open_ports,
+    uint32_t open_port_count,
+    uint16_t closed_port,
     const np_os_sigdb_t *sigdb,
+    const void *config,
     np_os_result_t *result)
 {
     pipe_log(NP_PIPE_LOG_INFO, LOG_STAGE,
@@ -202,8 +231,22 @@ np_status_t np_os_detect_pipeline_run(
     strncpy(ctx.target_ip, target_ip,
             sizeof(ctx.target_ip) - 1);
 
-    ctx.user_port = port;
-    ctx.db        = sigdb;
+    ctx.user_port   = port;
+    ctx.db          = sigdb;
+    ctx.config      = (void *)config;
+    ctx.closed_port = closed_port;
+
+    if (open_ports && open_port_count > 0)
+    {
+        uint32_t limit = open_port_count < NP_PIPELINE_MAX_OPEN_PORTS ? open_port_count : NP_PIPELINE_MAX_OPEN_PORTS;
+        ctx.open_port_count = limit;
+        for (uint32_t i = 0; i < limit; i++)
+            ctx.open_ports[i] = open_ports[i];
+        if (port != 0)
+            ctx.primary_open_port = port;
+        else
+            ctx.primary_open_port = ctx.open_ports[0];
+    }
 
     /* ============= Localhost Shortcut ============= */
     detect_localhost_os(&ctx);
@@ -237,29 +280,39 @@ np_status_t np_os_detect_pipeline_run(
 
     if (stage_tcp_probes(&ctx) != 0 || !ctx.probes_valid)
     {
-        pipe_log(NP_PIPE_LOG_ERR, LOG_STAGE,
-                 "TCP probes failed or no responses");
-        goto done;
+        pipe_log(NP_PIPE_LOG_WARN, LOG_STAGE,
+                 "TCP probes failed or insufficient responses; continuing to banner and heuristic stages");
     }
-
-    pipe_log(NP_PIPE_LOG_INFO, LOG_STAGE,
-             "TCP probes complete: responses=%u",
-             ctx.probe_response_count);
+    else
+    {
+        pipe_log(NP_PIPE_LOG_INFO, LOG_STAGE,
+                 "TCP probes complete: responses=%u",
+                 ctx.probe_response_count);
+    }
 
     /* ============= Stage 3: Fingerprint Build ============= */
     pipe_log(NP_PIPE_LOG_INFO, LOG_STAGE,
              "Stage 3: Building fingerprint");
 
-    if (stage_fingerprint_build(&ctx) != 0
-        || !ctx.fingerprint_valid)
+    if (ctx.probes_valid)
     {
-        pipe_log(NP_PIPE_LOG_WARN, LOG_STAGE,
-                 "Fingerprint build failed");
-        goto done;
+        if (stage_fingerprint_build(&ctx) != 0
+            || !ctx.fingerprint_valid)
+        {
+            pipe_log(NP_PIPE_LOG_WARN, LOG_STAGE,
+                     "Fingerprint build failed");
+        }
+        else
+        {
+            pipe_log(NP_PIPE_LOG_DEBUG, LOG_STAGE,
+                     "Fingerprint successfully built");
+        }
     }
-
-    pipe_log(NP_PIPE_LOG_DEBUG, LOG_STAGE,
-             "Fingerprint successfully built");
+    else
+    {
+        pipe_log(NP_PIPE_LOG_DEBUG, LOG_STAGE,
+                 "Skipping fingerprint build (insufficient probe responses)");
+    }
 
     /* ============= Stage 4+5: PARALLEL ============= */
     pipe_log(NP_PIPE_LOG_INFO, LOG_STAGE,
@@ -302,12 +355,29 @@ np_status_t np_os_detect_pipeline_run(
 
 done:
     if (result)
+    {
         *result = ctx.os_result;
+        result->open_port_count = (int)ctx.open_port_count;
+        result->port_used = ctx.primary_open_port;
+        for (uint32_t i = 0; i < ctx.open_port_count && i < NP_OS_MAX_OPEN_PORTS; i++)
+        {
+            result->open_ports[i] = ctx.open_ports[i];
+        }
+    }
 
     pipe_log(NP_PIPE_LOG_INFO, LOG_STAGE,
              "OS detection pipeline finished");
 
     return 0;
+}
+
+np_status_t np_os_detect_pipeline_run(
+    const char *target_ip,
+    uint16_t port,
+    const np_os_sigdb_t *sigdb,
+    np_os_result_t *result)
+{
+    return np_os_detect_pipeline_run_ex(target_ip, port, NULL, 0, 0, sigdb, NULL, result);
 }
 
 /* ============================================================

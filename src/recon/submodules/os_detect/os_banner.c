@@ -1202,6 +1202,12 @@ np_status_t np_os_banner_grab(const np_target_t *target,
 
                 /* ── Server software → likely OS (lower confidence) ── */
                 {"nginx", "Linux", 15},
+                {"openresty", "Linux", 15},
+                {"OpenResty", "Linux", 15},
+                {"sotoon", "Linux", 20},
+                {"Sotoon", "Linux", 20},
+                {"cloudflare", "Linux", 20},
+                {"Cloudflare", "Linux", 20},
                 {"Apache", "Linux", 15},
                 {"lighttpd", "Linux", 15},
                 {"OpenSSH", "Linux", 10},

@@ -33,6 +33,15 @@ np_status_t np_os_detect_pipeline_run(const char *target_ip,
                                       const np_os_sigdb_t *sigdb,
                                       np_os_result_t *result);
 
+np_status_t np_os_detect_pipeline_run_ex(const char *target_ip,
+                                         uint16_t port,
+                                         const uint16_t *open_ports,
+                                         uint32_t open_port_count,
+                                         uint16_t closed_port,
+                                         const np_os_sigdb_t *sigdb,
+                                         const void *config,
+                                         np_os_result_t *result);
+
 /**
  * @brief Runs the pipeline, automatically finding and loading the signature DB.
  *

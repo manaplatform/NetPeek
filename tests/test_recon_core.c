@@ -177,10 +177,92 @@ NP_TEST(test_recon_query_services_uses_per_service_proto)
     np_config_destroy(cfg);
 }
 
+static void test_os_detect_port_discovery_stats_ingest(void)
+{
+    np_config_t *cfg = np_config_create();
+    ASSERT_TRUE(cfg != NULL);
+
+    cfg->target_count = 1;
+    cfg->targets = calloc(1, sizeof(np_target_t));
+    ASSERT_TRUE(cfg->targets != NULL);
+
+    np_target_t *tgt = &cfg->targets[0];
+    strncpy(tgt->hostname, "manadev.net", sizeof(tgt->hostname) - 1);
+    strncpy(tgt->ip, "194.146.123.183", sizeof(tgt->ip) - 1);
+    tgt->host_discovered = true;
+    tgt->host_up = true;
+
+    /* Simulate port discovery finding 3 open ports */
+    uint16_t open_ports[] = {22, 80, 443};
+    tgt->port_count = 3;
+    tgt->results = calloc(3, sizeof(np_port_result_t));
+    ASSERT_TRUE(tgt->results != NULL);
+    for (int i = 0; i < 3; i++)
+    {
+        tgt->results[i].port = open_ports[i];
+        tgt->results[i].state = NP_PORT_OPEN;
+        strncpy(tgt->results[i].proto, "tcp", sizeof(tgt->results[i].proto) - 1);
+    }
+
+    tgt->os_result_valid = true;
+    strncpy(tgt->os_result.best_os, "Linux 5.4", sizeof(tgt->os_result.best_os) - 1);
+    tgt->os_result.best_confidence = 95.0;
+
+    np_recon_context_t *ctx = np_recon_create(cfg);
+    ASSERT_TRUE(ctx != NULL);
+
+    /* Graph ingest: host, services, OS */
+    uint64_t host_node = np_graph_get_or_add_host(ctx, tgt);
+    ASSERT_TRUE(host_node > 0);
+    ctx->hosts_seen = 1;
+
+    for (uint32_t i = 0; i < tgt->port_count; i++)
+    {
+        uint64_t svc_node = np_graph_add_service(ctx, &tgt->results[i]);
+        ASSERT_TRUE(svc_node > 0);
+        np_graph_link(ctx, host_node, svc_node, NP_RECON_REL_EXPOSES);
+        ctx->services_seen++;
+    }
+
+    uint64_t os_node = np_graph_add_os(ctx, &tgt->os_result);
+    ASSERT_TRUE(os_node > 0);
+    np_graph_link(ctx, host_node, os_node, NP_RECON_REL_RUNS);
+
+    /* Verify host view */
+    np_host_view_t *hosts = NULL;
+    uint32_t host_cnt = np_query_hosts(ctx, &hosts);
+    ASSERT_EQ_INT(1, (int)host_cnt);
+    ASSERT_TRUE(hosts != NULL);
+    ASSERT_EQ_STR("194.146.123.183", hosts[0].ip);
+
+    /* Verify service view */
+    np_service_view_t *services = NULL;
+    uint32_t svc_cnt = np_query_services(ctx, hosts[0].id, &services);
+    ASSERT_EQ_INT(3, (int)svc_cnt);
+    ASSERT_TRUE(services != NULL);
+
+    /* Verify OS view */
+    np_os_view_t *oses = NULL;
+    uint32_t os_cnt = np_query_host_os(ctx, hosts[0].id, &oses);
+    ASSERT_EQ_INT(1, (int)os_cnt);
+    ASSERT_TRUE(oses != NULL);
+    ASSERT_EQ_STR("Linux 5.4", oses[0].name);
+
+    ASSERT_EQ_INT(1, (int)ctx->hosts_seen);
+    ASSERT_EQ_INT(3, (int)ctx->services_seen);
+
+    np_query_free(oses);
+    np_query_free(services);
+    np_query_free(hosts);
+    np_recon_destroy(ctx);
+    np_config_destroy(cfg);
+}
+
 void register_recon_core_tests(void)
 {
     NP_REGISTER(test_recon_context_lifecycle);
     NP_REGISTER(test_recon_graph_and_evidence);
     NP_REGISTER(test_recon_graph_service_sync_from_targets);
     NP_REGISTER(test_recon_query_services_uses_per_service_proto);
+    NP_REGISTER(test_os_detect_port_discovery_stats_ingest);
 }
