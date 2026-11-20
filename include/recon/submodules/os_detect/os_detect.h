@@ -132,6 +132,13 @@ np_status_t np_os_detect_pipeline_run(
     const np_os_sigdb_t *db,
     np_os_result_t *result);
 
+np_status_t np_os_detect_pipeline_auto_ports(const char *target_ip,
+                                             uint16_t port,
+                                             const uint16_t *open_ports,
+                                             uint32_t open_port_count,
+                                             const char *sigdb_path,
+                                             np_os_result_t *result);
+
 np_status_t np_os_detect_pipeline_auto(
     const char *target_ip,
     uint16_t port,

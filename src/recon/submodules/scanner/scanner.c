@@ -6,6 +6,7 @@
 #include "thread_pool.h"
 #include "runtime/full_runtime.h"
 #include "recon/submodules/os_detect/os_detect_pipeline.h"
+#include "recon/submodules/os_detect/os_pipeline_config.h"
 #include "netpeek.h"
 #include "syn_sender.h"
 #include "runtime/stats.h"
@@ -279,7 +280,21 @@ np_status_t np_scan_os_detect_run_target(np_config_t *cfg,
     np_os_result_t active;
     memset(&active, 0, sizeof(active));
 
-    np_status_t st = np_os_detect_pipeline_auto(ip, port, NULL, &active);
+    /* Hand the SYN/connect scan's open ports to the OS pipeline. Without
+     * this, the pipeline re-runs discovery with no ports and reports
+     * open_ports=0 even though target->results lists open services. */
+    uint16_t open_ports[NP_PIPELINE_MAX_OPEN_PORTS];
+    uint32_t open_count = 0;
+    for (uint32_t i = 0;
+         i < target->port_count && open_count < NP_PIPELINE_MAX_OPEN_PORTS;
+         i++)
+    {
+        if (target->results[i].state == NP_PORT_OPEN)
+            open_ports[open_count++] = target->results[i].port;
+    }
+
+    np_status_t st = np_os_detect_pipeline_auto_ports(
+        ip, port, open_count > 0 ? open_ports : NULL, open_count, NULL, &active);
     if (st != NP_OK)
     {
         LOGW("OS detection failed for %s: %s", ip, np_status_str(st));

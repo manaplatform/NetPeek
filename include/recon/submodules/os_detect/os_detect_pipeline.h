@@ -55,6 +55,13 @@ np_status_t np_os_detect_pipeline_run_ex(const char *target_ip,
  * @param result A pointer to an np_os_result_t struct to be filled.
  * @return NP_STATUS_OK on success, or an error code on failure.
  */
+np_status_t np_os_detect_pipeline_auto_ports(const char *target_ip,
+                                             uint16_t port,
+                                             const uint16_t *open_ports,
+                                             uint32_t open_port_count,
+                                             const char *sigdb_path,
+                                             np_os_result_t *result);
+
 np_status_t np_os_detect_pipeline_auto(const char *target_ip,
                                        uint16_t port,
                                        const char *sigdb_path,
