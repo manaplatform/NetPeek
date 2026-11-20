@@ -206,7 +206,7 @@ static void npe_http__close_conn(int fd, SSL *ssl, SSL_CTX *ssl_ctx)
 }
 
 /* ── TCP connect with optional timeout ────────────────────────────────────── */
-static int npe_http__connect(const npe_http_url_t *url,
+static int npe_http__connect(const npe_http__parsed_url_t *url,
                              const npe_http_request_opts_t *opts,
                              int *out_fd)
 {
