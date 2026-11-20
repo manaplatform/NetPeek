@@ -1,3 +1,13 @@
+/*
+ * sendmmsg(2), recvmmsg(2) and struct mmsghdr are glibc extensions gated by
+ * _GNU_SOURCE. scanner_internal.h pins _POSIX_C_SOURCE, which hides them, so
+ * request _GNU_SOURCE before any system header is pulled in. Linux only: the
+ * call sites below are themselves guarded by __linux__.
+ */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
+
 #include "scanner_internal.h"
 #include "core/error.h"
 #include "logger.h"
