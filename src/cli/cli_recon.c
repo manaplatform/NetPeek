@@ -9,6 +9,8 @@
 
 #include "args.h"
 #include "cli.h"
+#include "cli_privilege.h"
+#include "core/error.h"
 #include "help.h"
 #include "logger.h"
 #include "recon/diff.h"
@@ -560,6 +562,26 @@ static int np_recon_run_once(const char *subcmd, int argc, char **argv)
     {
         if (strcmp(subcmd, "run") == 0 || strcmp(subcmd, "report") == 0 || strcmp(subcmd, "analyze") == 0)
             cfg->recon_style = NP_RECON_STYLE_MODERN;
+    }
+
+    /*
+     * The recon pipeline auto-selects a raw SYN scan when no scan type is
+     * forced, which silently yields an empty report without root. Tell the
+     * user to re-run with sudo (or force an unprivileged connect scan).
+     */
+    if (!np_cli_is_effective_root() && np_cli_recon_requires_root(cfg))
+    {
+        np_error(NP_ERR_OS,
+                 "[!] 'recon %s' needs root: the default scan uses raw SYN packets\n",
+                 subcmd);
+        np_error(NP_ERR_OS,
+                 "[!] Re-run with sudo, for example: sudo netpeek recon %s <target>\n",
+                 subcmd);
+        np_error(NP_ERR_OS,
+                 "[!] Or force an unprivileged scan: netpeek recon %s -sT <target>\n",
+                 subcmd);
+        np_config_destroy(cfg);
+        return 3;
     }
 
     np_logger_set_verbose(cfg->verbosity >= NP_LOG_VERBOSE);

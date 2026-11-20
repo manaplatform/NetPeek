@@ -116,6 +116,44 @@ get_local_ip(void)
     return addr;
 }
 
+/*
+ * Resolve the local IPv4 address the kernel would use to reach @dst.
+ * The plain get_local_ip() above returns the first UP address, which is the
+ * wrong source on multi-homed hosts: SYN-ACKs then arrive on an interface we
+ * are not capturing on and recon reports an empty service list.
+ */
+static uint32_t
+get_local_ip_for_target(const struct sockaddr_in *dst)
+{
+    if (dst)
+    {
+        int fd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (fd >= 0)
+        {
+            struct sockaddr_in tmp = *dst;
+            tmp.sin_port = htons(53);
+
+            if (connect(fd, (const struct sockaddr *)&tmp, sizeof(tmp)) == 0)
+            {
+                struct sockaddr_in local;
+                socklen_t slen = sizeof(local);
+                memset(&local, 0, sizeof(local));
+
+                if (getsockname(fd, (struct sockaddr *)&local, &slen) == 0 &&
+                    local.sin_addr.s_addr != 0)
+                {
+                    close(fd);
+                    return local.sin_addr.s_addr;
+                }
+            }
+
+            close(fd);
+        }
+    }
+
+    return get_local_ip();
+}
+
 static bool get_local_ip6_for_target(const struct in6_addr *dst,
                                      struct in6_addr *out_src)
 {
@@ -283,7 +321,7 @@ np_send_syn(const np_target_t *t,
         return;
     }
 
-    uint32_t local_ip = get_local_ip();
+    uint32_t local_ip = get_local_ip_for_target(&t->addr4);
     if (local_ip == 0)
         return;
 

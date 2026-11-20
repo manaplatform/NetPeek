@@ -10,6 +10,8 @@
 #include <pcap.h>
 #include <stdbool.h>
 #include <sys/time.h>
+#include <sys/socket.h>
+#include <ifaddrs.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/tcp.h>
@@ -382,16 +384,76 @@ done:
 /* Receiver thread                               */
 /* ───────────────────────────────────────────── */
 
+/*
+ * Pick the capture interface the kernel routes to the primary target.
+ * pcap_lookupdev() returns the first device (e.g. Wi-Fi/ap1), which may be
+ * the wrong link; every SYN reply is then missed and recon reports
+ * "Coverage: 0/0 services identified".
+ */
+static bool
+rx_route_device(char *out, size_t out_len)
+{
+    if (!out || out_len == 0 || !rx_cfg || rx_cfg->target_count == 0)
+        return false;
+
+    struct sockaddr_in dst = rx_cfg->targets[0].addr4;
+    if (dst.sin_family != AF_INET || dst.sin_addr.s_addr == 0)
+        return false;
+
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0)
+        return false;
+
+    dst.sin_port = htons(53);
+
+    struct sockaddr_in local;
+    socklen_t slen = sizeof(local);
+    memset(&local, 0, sizeof(local));
+
+    bool ok = connect(fd, (const struct sockaddr *)&dst, sizeof(dst)) == 0 &&
+              getsockname(fd, (struct sockaddr *)&local, &slen) == 0;
+    close(fd);
+
+    if (!ok || local.sin_addr.s_addr == 0)
+        return false;
+
+    struct ifaddrs *ifaddr = NULL;
+    if (getifaddrs(&ifaddr) != 0)
+        return false;
+
+    bool found = false;
+    for (struct ifaddrs *ifa = ifaddr; ifa; ifa = ifa->ifa_next)
+    {
+        if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET)
+            continue;
+
+        if (((struct sockaddr_in *)ifa->ifa_addr)->sin_addr.s_addr ==
+            local.sin_addr.s_addr)
+        {
+            snprintf(out, out_len, "%s", ifa->ifa_name);
+            found = true;
+            break;
+        }
+    }
+
+    freeifaddrs(ifaddr);
+    return found;
+}
+
 static void *
 receiver_thread(void *arg)
 {
     (void)arg;
 
     char errbuf[PCAP_ERRBUF_SIZE];
-    char *dev = pcap_lookupdev(errbuf);
+    char route_dev[64];
+
+    char *dev = rx_route_device(route_dev, sizeof(route_dev))
+                    ? route_dev
+                    : pcap_lookupdev(errbuf);
     if (!dev)
     {
-        RX_LOGE("pcap_lookupdev failed: %s", errbuf);
+        RX_LOGE("could not determine capture device: %s", errbuf);
         return NULL;
     }
 
