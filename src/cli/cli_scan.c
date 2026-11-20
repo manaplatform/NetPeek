@@ -71,6 +71,13 @@ int cmd_scan(int argc, char **argv)
     cfg->recon_cli_mode = true;
 
     /*
+     * OS detection runs through the os_detect pipeline by default. It needs
+     * raw sockets, so np_cli_scan_requires_root() enforces root for it.
+     * Use --no-os-detect for an unprivileged recon scan.
+     */
+    cfg->os_detect    = true;
+
+    /*
      * Build a clean argument array:
      *   1. Strip argv[1] ("scan" subcommand)
      *   2. Pre-parse scan-only flags and consume them
@@ -266,6 +273,12 @@ int cmd_scan(int argc, char **argv)
             continue;
         }
 
+        if (strcmp(cur, "--no-os-detect") == 0)
+        {
+            cfg->os_detect = false;
+            continue;
+        }
+
         /* ── Not a scan-only flag — pass through ── */
         clean_argv[clean_argc++] = argv[i];
     }
@@ -309,7 +322,7 @@ int cmd_scan(int argc, char **argv)
 
     if (np_cli_scan_requires_root(cfg) &&
         !np_cli_require_root("Selected scan mode/flags",
-                             "Run with sudo or use --connect/-sT for TCP connect scan"))
+                             "Run with sudo, or add --no-os-detect with --connect/-sT for an unprivileged TCP connect scan"))
     {
         np_config_destroy(cfg);
         return 3;
