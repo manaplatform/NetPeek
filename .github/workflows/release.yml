@@ -86,9 +86,20 @@ jobs:
             echo "error: release build produced no binaries to attach" >&2
             exit 1
           fi
+
           # tag_name stays the pushed date tag; title is v + CMake version.
           title="v${version}"
-          gh release create "${tag}" \
-            --title "${title}" \
-            --notes "$(printf 'NetPeek %s\n\nDate tag: %s\n' "${title}" "${tag}")" \
-            "${assets[@]}"
+          notes="$(printf 'NetPeek %s\n\nDate tag: %s\n' "${title}" "${tag}")"
+
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            echo "Release ${tag} already exists — updating title/notes and uploading assets"
+            gh release edit "${tag}" \
+              --title "${title}" \
+              --notes "${notes}"
+            gh release upload "${tag}" "${assets[@]}" --clobber
+          else
+            gh release create "${tag}" \
+              --title "${title}" \
+              --notes "${notes}" \
+              "${assets[@]}"
+          fi
