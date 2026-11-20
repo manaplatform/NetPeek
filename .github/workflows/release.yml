@@ -1,8 +1,8 @@
 name: Release
 
 # Publish only for date tags such as v2026.11.20 or v2026.11.12.1.
-# The Git tag stays the date tag. The GitHub Release name is the CMake
-# project VERSION extracted from CMakeLists.txt.
+# The Git tag stays the date tag. The GitHub Release name is "v" plus the
+# CMake project VERSION extracted from CMakeLists.txt (e.g. v0.0.1).
 on:
   push:
     tags:
@@ -86,8 +86,9 @@ jobs:
             echo "error: release build produced no binaries to attach" >&2
             exit 1
           fi
-          # tag_name stays the pushed date tag; title is the CMake version.
+          # tag_name stays the pushed date tag; title is v + CMake version.
+          title="v${version}"
           gh release create "${tag}" \
-            --title "${version}" \
-            --notes "$(printf 'NetPeek %s\n\nDate tag: %s\n' "${version}" "${tag}")" \
+            --title "${title}" \
+            --notes "$(printf 'NetPeek %s\n\nDate tag: %s\n' "${title}" "${tag}")" \
             "${assets[@]}"
