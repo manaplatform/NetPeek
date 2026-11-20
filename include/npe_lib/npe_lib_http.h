@@ -549,7 +549,7 @@ static char *npe_http__base64_encode(const char *input, size_t len);
 /* Networking */
 static int npe_http__set_nonblocking(int fd);
 static int npe_http__set_blocking(int fd);
-static int npe_http__connect(const npe_http_url_t *url,
+static int npe_http__connect(const npe_http__parsed_url_t *url,
                                 const npe_http_request_opts_t *opts,
                                 int *out_fd);
 
