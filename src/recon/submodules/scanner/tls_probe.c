@@ -138,8 +138,8 @@ static void collect_cert(np_tls_info_t *out, X509 *cert)
     if (!out || !cert)
         return;
 
-    X509_NAME *subj = X509_get_subject_name(cert);
-    X509_NAME *issuer = X509_get_issuer_name(cert);
+    const X509_NAME *subj = X509_get_subject_name(cert);
+    const X509_NAME *issuer = X509_get_issuer_name(cert);
     if (subj)
     {
         char buf[256];

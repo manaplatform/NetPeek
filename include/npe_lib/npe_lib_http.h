@@ -207,14 +207,17 @@ typedef struct
 {
     npe_http_method_t method;
     char url[2048];
-    char *body;
+    /* body and cookie_header are borrowed, read-only pointers into Lua-owned
+     * strings (see npe_http__populate_request). They are never written to or
+     * freed here, so they must stay const to match lua_tolstring()'s return. */
+    const char *body;
     size_t body_length;
     char user_agent[256];
     char content_type[128];
     char auth_username[256];
     char auth_password[256];
     char bearer_token[512];
-    char *cookie_header;
+    const char *cookie_header;
     npe_http_header_t *headers;
     size_t header_count;
     int timeout_ms;

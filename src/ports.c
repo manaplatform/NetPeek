@@ -1988,7 +1988,7 @@ bool np_port_iter_next(const np_port_spec_t *spec,
     if (it->range_idx >= spec->count)
         return false;
 
-    np_port_range_t *r = &spec->ranges[it->range_idx];
+    const np_port_range_t *r = &spec->ranges[it->range_idx];
 
     if (!it->started)
     {

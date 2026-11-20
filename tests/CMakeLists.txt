@@ -42,3 +42,6 @@ add_test(NAME unit COMMAND netpeek_tests)
 add_test(
     NAME cmake_version
     COMMAND /bin/sh ${CMAKE_SOURCE_DIR}/tests/test_cmake_version.sh)
+add_test(
+    NAME release_constcorrect
+    COMMAND /bin/sh ${CMAKE_SOURCE_DIR}/tests/test_release_constcorrect.sh)
