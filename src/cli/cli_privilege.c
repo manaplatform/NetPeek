@@ -44,6 +44,25 @@ bool np_cli_scan_requires_root(const np_config_t *cfg)
            raw_discovery || cfg->os_detect;
 }
 
+/*
+ * Recon pipelines run through the staged pipeline, where the scan engine
+ * auto-selects a raw SYN scan whenever no scan type has been forced. That
+ * requires root; without it the engine silently yields an empty report
+ * ("Coverage: 0/0 services identified"). An explicitly forced scan type
+ * (for example --connect/-sT) is honoured as-is so unprivileged connect
+ * recon keeps working.
+ */
+bool np_cli_recon_requires_root(const np_config_t *cfg)
+{
+    if (!cfg)
+        return false;
+
+    if (np_cli_scan_requires_root(cfg))
+        return true;
+
+    return !cfg->scan_type_forced;
+}
+
 bool np_cli_require_root(const char *operation, const char *hint)
 {
     if (np_cli_is_effective_root())
