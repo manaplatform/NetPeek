@@ -555,6 +555,11 @@ static int np_recon_run_once(const char *subcmd, int argc, char **argv)
         cfg->os_detect = true;
         cfg->service_version_detect = true;
     }
+    else if (strcmp(subcmd, "run") == 0)
+    {
+        /* OS detection is a pipeline stage of `recon run` and its result is shown in the report. */
+        cfg->os_detect = true;
+    }
 
     cfg->recon_subcommand = subcmd;
 
