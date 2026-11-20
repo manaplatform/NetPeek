@@ -45,3 +45,6 @@ add_test(
 add_test(
     NAME release_constcorrect
     COMMAND /bin/sh ${CMAKE_SOURCE_DIR}/tests/test_release_constcorrect.sh)
+add_test(
+    NAME release_strptime
+    COMMAND /bin/sh ${CMAKE_SOURCE_DIR}/tests/test_release_strptime.sh ${LUA_INCLUDE_DIR})
