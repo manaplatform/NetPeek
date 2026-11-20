@@ -209,6 +209,22 @@ static void pipeline_promote_banner_result(np_pipeline_ctx_t *ctx)
     }
 }
 
+static void pipeline_copy_open_ports(const np_pipeline_ctx_t *ctx,
+                                     np_os_result_t *result)
+{
+    if (!ctx || !result)
+        return;
+
+    result->open_port_count = (int)ctx->open_port_count;
+    result->port_used = ctx->primary_open_port;
+    for (uint32_t i = 0;
+         i < ctx->open_port_count && i < NP_OS_MAX_OPEN_PORTS;
+         i++)
+    {
+        result->open_ports[i] = ctx->open_ports[i];
+    }
+}
+
 /* ============================================================
    Pipeline Entry (FULL LOGGING)
    ============================================================ */
@@ -254,7 +270,11 @@ np_status_t np_os_detect_pipeline_run_ex(
     {
         pipe_log(NP_PIPE_LOG_INFO, LOG_STAGE,
                  "Localhost detected, skipping deep scan");
-        if (result) *result = ctx.os_result;
+        if (result)
+        {
+            *result = ctx.os_result;
+            pipeline_copy_open_ports(&ctx, result);
+        }
         return 0;
     }
 
@@ -357,12 +377,7 @@ done:
     if (result)
     {
         *result = ctx.os_result;
-        result->open_port_count = (int)ctx.open_port_count;
-        result->port_used = ctx.primary_open_port;
-        for (uint32_t i = 0; i < ctx.open_port_count && i < NP_OS_MAX_OPEN_PORTS; i++)
-        {
-            result->open_ports[i] = ctx.open_ports[i];
-        }
+        pipeline_copy_open_ports(&ctx, result);
     }
 
     pipe_log(NP_PIPE_LOG_INFO, LOG_STAGE,
@@ -383,9 +398,11 @@ np_status_t np_os_detect_pipeline_run(
 /* ============================================================
    Public API Wrappers (Logged)
    ============================================================ */
-np_status_t np_os_detect_pipeline_auto(
+np_status_t np_os_detect_pipeline_auto_ports(
     const char *target_ip,
     uint16_t port,
+    const uint16_t *open_ports,
+    uint32_t open_port_count,
     const char *sigdb_path,
     np_os_result_t *result)
 {
@@ -412,12 +429,23 @@ np_status_t np_os_detect_pipeline_auto(
 
     /* 3. Run pipeline */
     np_status_t st =
-        np_os_detect_pipeline_run(target_ip, port, db, result);
+        np_os_detect_pipeline_run_ex(target_ip, port, open_ports, open_port_count,
+                                     0, db, NULL, result);
 
     /* 4. Cleanup */
     np_sigdb_free(&loaded_db);
 
     return st;
+}
+
+np_status_t np_os_detect_pipeline_auto(
+    const char *target_ip,
+    uint16_t port,
+    const char *sigdb_path,
+    np_os_result_t *result)
+{
+    return np_os_detect_pipeline_auto_ports(target_ip, port, NULL, 0,
+                                            sigdb_path, result);
 }
 
 np_status_t np_os_detect_quick(

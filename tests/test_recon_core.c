@@ -258,6 +258,52 @@ static void test_os_detect_port_discovery_stats_ingest(void)
     np_config_destroy(cfg);
 }
 
+/* Defined in src/recon/submodules/scanner/scanner.c */
+np_status_t np_scan_os_detect_run_target(np_config_t *cfg, uint32_t target_idx);
+
+/* Regression: open ports from the port-discovery results must reach the
+ * OS pipeline. Previously the handoff passed NULL ports, so the pipeline
+ * logged open_ports=0 and the OS result carried no open-port data. */
+static void test_os_detect_open_port_handoff_from_scan_results(void)
+{
+    np_config_t *cfg = np_config_create();
+    ASSERT_TRUE(cfg != NULL);
+
+    cfg->os_detect = true;
+    cfg->target_count = 1;
+    cfg->targets = calloc(1, sizeof(np_target_t));
+    ASSERT_TRUE(cfg->targets != NULL);
+
+    /* Localhost takes the pipeline fast path, avoiding live network probes. */
+    np_target_t *tgt = &cfg->targets[0];
+    strncpy(tgt->hostname, "localhost", sizeof(tgt->hostname) - 1);
+    strncpy(tgt->ip, "127.0.0.1", sizeof(tgt->ip) - 1);
+    tgt->host_discovered = true;
+    tgt->host_up = true;
+
+    uint16_t open_ports[] = {22, 80, 443};
+    tgt->port_count = 3;
+    tgt->results = calloc(3, sizeof(np_port_result_t));
+    ASSERT_TRUE(tgt->results != NULL);
+    for (int i = 0; i < 3; i++)
+    {
+        tgt->results[i].port = open_ports[i];
+        tgt->results[i].state = NP_PORT_OPEN;
+        strncpy(tgt->results[i].proto, "tcp", sizeof(tgt->results[i].proto) - 1);
+    }
+
+    (void)np_scan_os_detect_run_target(cfg, 0);
+
+    /* The three open ports discovered by the scan must be visible to the
+     * OS pipeline, not dropped at the scanner -> pipeline handoff. */
+    ASSERT_EQ_INT(3, tgt->os_result.open_port_count);
+    ASSERT_EQ_INT(22, (int)tgt->os_result.open_ports[0]);
+    ASSERT_EQ_INT(80, (int)tgt->os_result.open_ports[1]);
+    ASSERT_EQ_INT(443, (int)tgt->os_result.open_ports[2]);
+
+    np_config_destroy(cfg);
+}
+
 void register_recon_core_tests(void)
 {
     NP_REGISTER(test_recon_context_lifecycle);
@@ -265,4 +311,5 @@ void register_recon_core_tests(void)
     NP_REGISTER(test_recon_graph_service_sync_from_targets);
     NP_REGISTER(test_recon_query_services_uses_per_service_proto);
     NP_REGISTER(test_os_detect_port_discovery_stats_ingest);
+    NP_REGISTER(test_os_detect_open_port_handoff_from_scan_results);
 }
