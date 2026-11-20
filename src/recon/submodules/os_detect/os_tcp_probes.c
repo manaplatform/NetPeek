@@ -20,6 +20,15 @@
 #include <ifaddrs.h>
 #include <net/if.h>
 
+/* ECN flag bits (RFC 3168). glibc's <netinet/tcp.h> only defines the
+   classic TH_FIN..TH_URG bits, so provide the ECN ones when missing. */
+#ifndef TH_ECE
+#define TH_ECE 0x40
+#endif
+#ifndef TH_CWR
+#define TH_CWR 0x80
+#endif
+
 /* ============================================================
    Helpers
    ============================================================ */
