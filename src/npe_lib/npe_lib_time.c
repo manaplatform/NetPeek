@@ -6,6 +6,22 @@
  *
  *****************************************************************************/
 
+/* Feature-test macros must be defined before ANY system header is included:
+ * npe_lib_time.h already pulls in <time.h>, and under strict C11 glibc only
+ * declares strptime() when _XOPEN_SOURCE >= 500. Defining these after the
+ * includes (as this file used to) is a no-op and caused the Release CI build
+ * to fail with "implicit declaration of function strptime".
+ * _DEFAULT_SOURCE keeps timegm() visible on glibc; _DARWIN_C_SOURCE (set by
+ * CMake) keeps the Darwin extensions enabled alongside _XOPEN_SOURCE. */
+#ifndef _WIN32
+  #ifndef _XOPEN_SOURCE
+    #define _XOPEN_SOURCE 700
+  #endif
+  #ifndef _DEFAULT_SOURCE
+    #define _DEFAULT_SOURCE 1
+  #endif
+#endif
+
 #include "npe_lib_time.h"
 
 #include <stdlib.h>
@@ -25,16 +41,7 @@
 #else
   #include <unistd.h>
   #include <sys/time.h>
-  #ifndef _POSIX_C_SOURCE
-    #define _POSIX_C_SOURCE 200809L
-  #endif
 #endif
-
-/* strptime may need _XOPEN_SOURCE on some platforms */
-#if !defined(_WIN32) && !defined(_XOPEN_SOURCE)
-  #define _XOPEN_SOURCE 700
-#endif
-
 
 /* =============================================================================
  * INTERNAL HELPERS
