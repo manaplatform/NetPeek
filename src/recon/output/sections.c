@@ -83,7 +83,14 @@ bool np_recon_should_show_version(const np_recon_context_t *ctx)
 
 bool np_recon_should_show_os(const np_recon_context_t *ctx)
 {
-    if (!ctx || !ctx->cfg || !ctx->cfg->recon_subcommand)
+    if (!ctx || !ctx->cfg)
+        return false;
+
+    /* OS detection enabled for this run (e.g. `recon run --os`): show its output. */
+    if (ctx->cfg->os_detect)
+        return true;
+
+    if (!ctx->cfg->recon_subcommand)
         return false;
 
     return strcmp(ctx->cfg->recon_subcommand, "analyze") == 0 ||
