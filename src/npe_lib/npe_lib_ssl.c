@@ -126,14 +126,14 @@ static void npe_ssl_extract_cert_info(X509 *cert, npe_ssl_cert_t *cert_info)
         return;
 
     /* Subject */
-    X509_NAME *subject = X509_get_subject_name(cert);
+    const X509_NAME *subject = X509_get_subject_name(cert);
     if (subject)
     {
         X509_NAME_oneline(subject, cert_info->subject, sizeof(cert_info->subject));
     }
 
     /* Issuer */
-    X509_NAME *issuer = X509_get_issuer_name(cert);
+    const X509_NAME *issuer = X509_get_issuer_name(cert);
     if (issuer)
     {
         X509_NAME_oneline(issuer, cert_info->issuer, sizeof(cert_info->issuer));
