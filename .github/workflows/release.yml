@@ -1,0 +1,93 @@
+name: Release
+
+# Publish only for date tags such as v2026.11.20 or v2026.11.12.1.
+# The Git tag stays the date tag. The GitHub Release name is the CMake
+# project VERSION extracted from CMakeLists.txt.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Require a date tag
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if ! printf '%s\n' "${tag}" | grep -Eq '^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}([.][0-9]+)?$'; then
+            echo "error: release tag must stay a date tag (vYYYY.MM.DD[.N]), got ${tag}" >&2
+            exit 1
+          fi
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            pkg-config \
+            libpcap-dev \
+            liblua5.4-dev \
+            libssl-dev \
+            libpcre2-dev \
+            libssh2-1-dev \
+            libsqlite3-dev \
+            lua5.4
+
+      - name: Extract CMake project version
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(make -s version)"
+          if [ -z "${version}" ]; then
+            echo "error: CMakeLists.txt has no project VERSION" >&2
+            exit 1
+          fi
+          printf 'version=%s\n' "${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Release build and package binaries
+        run: make package
+
+      - name: Refuse tracked build artifacts
+        run: |
+          set -euo pipefail
+          # build/ and dist/ are gitignored. Do not stage or commit them.
+          if git status --porcelain --untracked-files=all -- build dist | grep -q .; then
+            echo "error: refusing to continue with visible build artifacts" >&2
+            git status --porcelain --untracked-files=all -- build dist >&2
+            exit 1
+          fi
+          git diff --cached --quiet
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          tag="${GITHUB_REF_NAME}"
+          shopt -s nullglob
+          assets=(dist/netpeek-"${version}"-*)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "error: release build produced no binaries to attach" >&2
+            exit 1
+          fi
+          # tag_name stays the pushed date tag; title is the CMake version.
+          gh release create "${tag}" \
+            --title "${version}" \
+            --notes "$(printf 'NetPeek %s\n\nDate tag: %s\n' "${version}" "${tag}")" \
+            "${assets[@]}"

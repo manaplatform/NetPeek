@@ -39,3 +39,6 @@ endif()
 target_compile_definitions(netpeek_tests PRIVATE _DEFAULT_SOURCE _DARWIN_C_SOURCE)
 
 add_test(NAME unit COMMAND netpeek_tests)
+add_test(
+    NAME cmake_version
+    COMMAND /bin/sh ${CMAKE_SOURCE_DIR}/tests/test_cmake_version.sh)
