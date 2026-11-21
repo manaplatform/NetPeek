@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" width="800" height="400">
+  <!-- Background (Dark Terminal Style) -->
+  <rect width="100%" height="100%" fill="#0d1117" rx="20" ry="20"/>
+
+  <!-- Definition for the Neon Glow Effect -->
+  <defs>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- The "Eye" / Network Scan Shape -->
+  <g transform="translate(400, 180)">
+    <!-- Outer Eye Shape (Network Nodes) -->
+    <path d="M -150 0 Q 0 -100 150 0 Q 0 100 -150 0" fill="none" stroke="#58a6ff" stroke-width="4" filter="url(#glow)"/>
+
+    <!-- Network Connection Lines (Nodes) -->
+    <line x1="-100" y1="-20" x2="-40" y2="20" stroke="#58a6ff" stroke-width="2" opacity="0.6"/>
+    <line x1="100" y1="-20" x2="40" y2="20" stroke="#58a6ff" stroke-width="2" opacity="0.6"/>
+    <line x1="-40" y1="20" x2="40" y2="20" stroke="#58a6ff" stroke-width="2" opacity="0.6"/>
+
+    <!-- Nodes (Dots) -->
+    <circle cx="-100" cy="-20" r="4" fill="#58a6ff"/>
+    <circle cx="100" cy="-20" r="4" fill="#58a6ff"/>
+    <circle cx="-40" cy="20" r="4" fill="#58a6ff"/>
+    <circle cx="40" cy="20" r="4" fill="#58a6ff"/>
+
+    <!-- The "Pupil" / Scan Beam -->
+    <circle cx="0" cy="0" r="30" fill="#0d1117" stroke="#3fb950" stroke-width="3" filter="url(#glow)"/>
+    <circle cx="0" cy="0" r="15" fill="#3fb950" opacity="0.8"/>
+
+    <!-- Scanning Beam (Crosshair) -->
+    <line x1="-40" y1="0" x2="40" y2="0" stroke="#3fb950" stroke-width="2" opacity="0.5"/>
+    <line x1="0" y1="-40" x2="0" y2="40" stroke="#3fb950" stroke-width="2" opacity="0.5"/>
+  </g>
+
+  <!-- Text: NetPeek -->
+  <text x="400" y="310" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="64" font-weight="bold" fill="#c9d1d9" text-anchor="middle" letter-spacing="2">NetPeek</text>
+
+  <!-- Subtitle / Tagline -->
+  <text x="400" y="350" font-family="'Courier New', monospace" font-size="18" fill="#8b949e" text-anchor="middle">Fast • Modular • Network Scanner</text>
+
+  <!-- Decorative Terminal Accent (Prompt) -->
+  <text x="320" y="350" font-family="'Courier New', monospace" font-size="18" fill="#3fb950" text-anchor="end">></text>
+</svg>

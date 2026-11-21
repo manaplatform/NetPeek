@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.svg" alt="NetPeek logo" width="400">
+</p>
+
 # NetPeek
 
 **NetPeek** is a high-performance, modular network scanner written in C. It is designed for fast port scanning, service probing, OS fingerprinting, and extensible scripting via its built-in **NPE (NetPeek Probe Engine)**.
